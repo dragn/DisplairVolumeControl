@@ -17,12 +17,16 @@
    On: 06/11/2014
  */
 
-#include "SDL2/SDL.h"
+#include "SDL.h"
+#include "SDL_mixer.h"
 #include <cstdlib>
-#include "resource.h"
+#include <mmdeviceapi.h>
+#include <endpointvolume.h>
 
 int SCREEN_WIDTH = 1024;
 int SCREEN_HEIGHT = 768;
+
+char *MUSIC_FILENAME = "sound.wav";
 
 SDL_Window *window;
 SDL_Renderer *renderer;
@@ -30,7 +34,9 @@ SDL_Renderer *renderer;
 SDL_Texture *volumeTexture;
 SDL_Texture *crossTexture;
 
-double volume = 0.75;
+IAudioEndpointVolume *endpointVolume = NULL;
+LPWSTR deviceId;
+HRESULT hr;
 
 void quit() {
   if (volumeTexture != nullptr) SDL_DestroyTexture(volumeTexture);
@@ -39,6 +45,8 @@ void quit() {
   if (renderer != nullptr) SDL_DestroyRenderer(renderer);
   if (window != nullptr) SDL_DestroyWindow(window);
 
+  Mix_CloseAudio();
+  Mix_Quit();
   SDL_Quit();
 
   exit(0);
@@ -48,11 +56,18 @@ void quit() {
  * Scale 0 to 1
  */
 double getCurrentVolume() {
-  return volume;
+  if (endpointVolume) {
+    float volume;
+    endpointVolume->GetMasterVolumeLevelScalar(&volume);
+    return volume;
+  }
+  else return 0.;
 }
 
 void setCurrentVolume(double vol) {
-  volume = vol;
+  if (endpointVolume) {
+    endpointVolume->SetMasterVolumeLevelScalar(vol, NULL);
+  }
 }
 
 SDL_Texture* loadTexture(char* name) {
@@ -76,6 +91,44 @@ bool isPointInRect(SDL_Rect *rect, int x, int y) {
     rect->x + rect->w >= x && rect->y + rect->h >= y;
 }
 
+bool PickDevice(IMMDevice **DeviceToUse)
+{
+  HRESULT hr;
+  bool retValue = true;
+  IMMDeviceEnumerator *deviceEnumerator = NULL;
+  IMMDeviceCollection *deviceCollection = NULL;
+
+  hr = CoCreateInstance(__uuidof(MMDeviceEnumerator), NULL, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&deviceEnumerator));
+  if (FAILED(hr))
+  {
+    SDL_Log("Unable to instantiate device enumerator: %x\n", hr);
+    retValue = false;
+    goto Exit;
+  }
+
+  IMMDevice *device = NULL;
+
+  if (device == NULL)
+  {
+    ERole deviceRole = eMultimedia;
+    hr = deviceEnumerator->GetDefaultAudioEndpoint(eRender, deviceRole, &device);
+    if (FAILED(hr))
+    {
+      SDL_Log("Unable to get default device for role %d: %x\n", deviceRole, hr);
+      retValue = false;
+      goto Exit;
+    }
+  }
+
+  *DeviceToUse = device;
+  retValue = true;
+Exit:
+  if (deviceCollection) deviceCollection->Release();
+  if (deviceEnumerator) deviceEnumerator->Release();
+
+  return retValue;
+}
+
 int main(int argc, char **argv) {
   if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER) != 0) {
     SDL_Log("SDL init error: %s\n", SDL_GetError());
@@ -89,13 +142,53 @@ int main(int argc, char **argv) {
     quit();
   }
 
-  //SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN);
+  SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN);
 
   renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
   
   if (renderer == nullptr) {
     SDL_Log("SDL_CreateRenderer error: %s\n", SDL_GetError());
     quit();
+  }
+
+  IMMDevice *device = nullptr;
+  PickDevice(&device);
+
+  if (device == nullptr) {
+    SDL_LogCritical(SDL_LOG_CATEGORY_APPLICATION,
+      "Unable to initialize audio endpoint!");
+    quit();
+  }
+
+  hr = device->Activate(__uuidof(IAudioEndpointVolume), CLSCTX_INPROC_SERVER, NULL, reinterpret_cast<void **>(&endpointVolume));
+  if (FAILED(hr) || endpointVolume == nullptr) {
+    SDL_LogCritical(SDL_LOG_CATEGORY_APPLICATION, 
+      "Unable to activate endpoint volume on output device: %x\n", hr);
+    quit();
+  }
+
+  int flags = MIX_INIT_MP3;
+  int initted = Mix_Init(flags);
+  if (initted&flags != flags) {
+    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+      "Mix_Init: Failed to init required mp3 support!\n");
+    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+      "Mix_Init: %s\n", Mix_GetError());
+    quit();
+  }
+
+  if (Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 2, 1024) == -1) {
+    SDL_Log("Mix_OpenAudio error: %s\n", Mix_GetError());
+    quit();
+  }
+
+  Mix_Music *music = Mix_LoadMUS(MUSIC_FILENAME);
+  if (music) {
+    Mix_FadeInMusic(music, -1, 1000);
+  }
+  else {
+    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+      "Unable to load music file: %s, error: %s\n", MUSIC_FILENAME, Mix_GetError());
   }
 
   volumeTexture = loadTexture("volume.bmp");
