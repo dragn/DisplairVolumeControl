@@ -20,19 +20,28 @@
 #include "SDL.h"
 #include "SDL_mixer.h"
 #include <cstdlib>
+#include <cmath>
 #include <mmdeviceapi.h>
 #include <endpointvolume.h>
+#include "SDL2_gfxPrimitives.h"
+#include "SDL_ttf.h"
+#include <string>
 
 int SCREEN_WIDTH = 1024;
 int SCREEN_HEIGHT = 768;
 
 char *MUSIC_FILENAME = "sound.wav";
+char *FONT_FILENAME = "FreeSans.ttf";
 
 SDL_Window *window;
 SDL_Renderer *renderer;
 
 SDL_Texture *volumeTexture;
 SDL_Texture *crossTexture;
+
+SDL_Color textColor = { 240, 180, 90 };
+
+TTF_Font *font;
 
 IAudioEndpointVolume *endpointVolume = NULL;
 LPWSTR deviceId;
@@ -47,6 +56,7 @@ void quit() {
 
   Mix_CloseAudio();
   Mix_Quit();
+  TTF_Quit();
   SDL_Quit();
 
   exit(0);
@@ -129,6 +139,19 @@ Exit:
   return retValue;
 }
 
+void renderText(SDL_Renderer *renderer, const char *text, int x, int y) {
+  if (font == nullptr) return;
+  SDL_Surface *surface = TTF_RenderText_Blended(font, text, textColor);
+  if (surface != nullptr) {
+    SDL_Texture *texture = SDL_CreateTextureFromSurface(renderer, surface);
+    SDL_Rect dst;
+    SDL_QueryTexture(texture, NULL, NULL, &dst.w, &dst.h);
+    dst.x = x - dst.w / 2;
+    dst.y = y - dst.h / 2;
+    SDL_RenderCopy(renderer, texture, NULL, &dst);
+  }
+}
+
 int main(int argc, char **argv) {
   if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER) != 0) {
     SDL_Log("SDL init error: %s\n", SDL_GetError());
@@ -149,6 +172,17 @@ int main(int argc, char **argv) {
   if (renderer == nullptr) {
     SDL_Log("SDL_CreateRenderer error: %s\n", SDL_GetError());
     quit();
+  }
+
+  if (TTF_Init() != 0) {
+    SDL_Log("SDL_ttf initialization error: %s\n", TTF_GetError());
+    quit();
+  }
+
+  font = TTF_OpenFont(FONT_FILENAME, 72);
+  if (font == nullptr) {
+    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+      "Could not load font '%s': %s\n", FONT_FILENAME, TTF_GetError());
   }
 
   IMMDevice *device = nullptr;
@@ -217,7 +251,7 @@ int main(int argc, char **argv) {
   }
 
   SDL_Rect handleRect;
-  handleRect.w = 40;
+  handleRect.w = 72;
   handleRect.h = 72;
   handleRect.y = barRect.y + barRect.h / 2 - handleRect.h / 2;
 
@@ -235,7 +269,6 @@ int main(int argc, char **argv) {
           break;
         case SDL_MOUSEBUTTONUP:
           if (e.button.button == SDL_BUTTON_LEFT && e.button.clicks == 1) {
-            // single click
             if (isPointInRect(&closeIconPos, e.button.x, e.button.y)) {
               quit();
             }
@@ -252,8 +285,11 @@ int main(int argc, char **argv) {
           }
           break;
         case SDL_MOUSEMOTION:
-          if (dragging && e.motion.x >= barRect.x && e.motion.x <= barRect.x + barRect.w) {
-            setCurrentVolume((double) (e.motion.x - barRect.x) / barRect.w);
+          if (dragging) {
+            double v = (double)(e.motion.x - barRect.x) / barRect.w;
+            if (v < 0) v = 0;
+            if (v > 1) v = 1;
+            setCurrentVolume(v);
           }
           break;
       }
@@ -269,12 +305,18 @@ int main(int argc, char **argv) {
       SDL_RenderCopy(renderer, crossTexture, NULL, &closeIconPos);
     }
 
-    SDL_SetRenderDrawColor(renderer, 136, 136, 136, SDL_ALPHA_OPAQUE);
+    SDL_SetRenderDrawColor(renderer, 255, 255, 255, SDL_ALPHA_OPAQUE);
     SDL_RenderFillRect(renderer, &barRect);
 
     handleRect.x = barRect.x + barRect.w * getCurrentVolume() - handleRect.w / 2;
-    SDL_SetRenderDrawColor(renderer, 255, 255, 255, SDL_ALPHA_OPAQUE);
-    SDL_RenderFillRect(renderer, &handleRect);
+    SDL_SetRenderDrawColor(renderer, 240, 180, 90, SDL_ALPHA_OPAQUE);
+    aaellipseRGBA(renderer, handleRect.x + handleRect.w / 2, handleRect.y + handleRect.h / 2,
+      handleRect.w / 2, handleRect.h / 2, 240, 180, 90, SDL_ALPHA_OPAQUE);
+    filledEllipseRGBA(renderer, handleRect.x + handleRect.w / 2, handleRect.y + handleRect.h / 2,
+      handleRect.w / 2, handleRect.h / 2, 240, 180, 90, SDL_ALPHA_OPAQUE);
+
+    renderText(renderer, (std::to_string( (int) round(getCurrentVolume() * 100) ) + " %" ).c_str(),
+      volumeIconPos.x + volumeIconPos.w / 2, volumeIconPos.y + volumeIconPos.h + 60);
 
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
 
