@@ -39,7 +39,7 @@ SDL_Renderer *renderer;
 SDL_Texture *volumeTexture;
 SDL_Texture *crossTexture;
 
-SDL_Color textColor = { 240, 180, 90 };
+SDL_Color textColor = { 255, 255, 255 };
 
 TTF_Font *font;
 
@@ -55,6 +55,8 @@ void quit() {
   if (window != nullptr) SDL_DestroyWindow(window);
 
   Mix_CloseAudio();
+  SDL_Delay(200);
+  
   Mix_Quit();
   TTF_Quit();
   SDL_Quit();
@@ -179,7 +181,7 @@ int main(int argc, char **argv) {
     quit();
   }
 
-  font = TTF_OpenFont(FONT_FILENAME, 72);
+  font = TTF_OpenFont(FONT_FILENAME, 96);
   if (font == nullptr) {
     SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
       "Could not load font '%s': %s\n", FONT_FILENAME, TTF_GetError());
@@ -237,7 +239,7 @@ int main(int argc, char **argv) {
   SDL_Rect volumeIconPos;
   if (volumeTexture != nullptr) {
     SDL_QueryTexture(volumeTexture, NULL, NULL, &volumeIconPos.w, &volumeIconPos.h);
-    volumeIconPos.x = (SCREEN_WIDTH - volumeIconPos.w) / 2;
+    volumeIconPos.x = (SCREEN_WIDTH - volumeIconPos.w) / 2 - 100;
     volumeIconPos.y = (SCREEN_HEIGHT - volumeIconPos.h) / 2;
   }
 
@@ -308,15 +310,26 @@ int main(int argc, char **argv) {
     SDL_SetRenderDrawColor(renderer, 255, 255, 255, SDL_ALPHA_OPAQUE);
     SDL_RenderFillRect(renderer, &barRect);
 
-    handleRect.x = barRect.x + barRect.w * getCurrentVolume() - handleRect.w / 2;
-    SDL_SetRenderDrawColor(renderer, 240, 180, 90, SDL_ALPHA_OPAQUE);
-    aaellipseRGBA(renderer, handleRect.x + handleRect.w / 2, handleRect.y + handleRect.h / 2,
-      handleRect.w / 2, handleRect.h / 2, 240, 180, 90, SDL_ALPHA_OPAQUE);
-    filledEllipseRGBA(renderer, handleRect.x + handleRect.w / 2, handleRect.y + handleRect.h / 2,
-      handleRect.w / 2, handleRect.h / 2, 240, 180, 90, SDL_ALPHA_OPAQUE);
+    SDL_Rect fillRect = barRect;
+    fillRect.w = barRect.w * getCurrentVolume();
+    SDL_SetRenderDrawColor(renderer, 215, 120, 10, SDL_ALPHA_OPAQUE);
+    SDL_RenderFillRect(renderer, &fillRect);
 
-    renderText(renderer, (std::to_string( (int) round(getCurrentVolume() * 100) ) + " %" ).c_str(),
-      volumeIconPos.x + volumeIconPos.w / 2, volumeIconPos.y + volumeIconPos.h + 60);
+    handleRect.x = barRect.x + barRect.w * getCurrentVolume() - handleRect.w / 2;
+
+    filledEllipseRGBA(renderer, handleRect.x + handleRect.w / 2, handleRect.y + handleRect.h / 2,
+      handleRect.w / 2, handleRect.h / 2, 160, 160, 160, SDL_ALPHA_OPAQUE);
+    aaellipseRGBA(renderer, handleRect.x + handleRect.w / 2, handleRect.y + handleRect.h / 2,
+      handleRect.w / 2, handleRect.h / 2, 160, 160, 160, SDL_ALPHA_OPAQUE);
+
+    filledEllipseRGBA(renderer, handleRect.x + handleRect.w / 2, handleRect.y + handleRect.h / 2,
+      handleRect.w / 2 - 5, handleRect.h / 2 - 5, 215, 120, 10, SDL_ALPHA_OPAQUE);
+    aaellipseRGBA(renderer, handleRect.x + handleRect.w / 2, handleRect.y + handleRect.h / 2,
+      handleRect.w / 2 - 5, handleRect.h / 2 - 5, 215, 120, 10, SDL_ALPHA_OPAQUE);
+
+    SDL_SetRenderDrawColor(renderer, 255, 255, 255, SDL_ALPHA_OPAQUE);
+    renderText(renderer, (std::to_string( (int) round(getCurrentVolume() * 100) )).c_str(),
+      volumeIconPos.x + volumeIconPos.w + 100, volumeIconPos.y + volumeIconPos.h / 2);
 
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
 
